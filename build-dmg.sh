@@ -5,8 +5,10 @@
 #
 #   ./build-dmg.sh [output.dmg]      default: build/Fix Line Wraps.dmg
 set -euo pipefail
+OUT="${1:-}"
+case "$OUT" in ""|/*) ;; *) OUT="$PWD/$OUT" ;; esac   # resolve before leaving the caller's folder
 cd "$(dirname "$0")"
-OUT="${1:-build/Fix Line Wraps.dmg}"
+[ -n "$OUT" ] || OUT="$PWD/build/Fix Line Wraps.dmg"
 ./build-app.sh >/dev/null
 APP="$HOME/Library/Caches/fix-line-wraps-build/Fix Line Wraps.app"
 STAGE=$(mktemp -d)

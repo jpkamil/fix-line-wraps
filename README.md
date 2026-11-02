@@ -8,7 +8,7 @@ Documents hard-wrapped at a fixed column read ragged in any narrower window: eac
 
 Unwrapping by hand is how a word gets destroyed: two lines joined with no space between them, in the middle of a sentence that still looks plausible. So this tool proves its work instead of asserting it. Before writing, it collapses every run of whitespace in the old text and the new text to one space and refuses to write unless the two are identical. If a single character of actual text would differ, the file is left exactly as it was and the window says so.
 
-A hard-wrapped list item is joined into one line too, because its wrapped remainder is prose. Everything else where the line break is the meaning is left alone: fenced code, tables, nested list items, headings, rules, blockquotes, YAML front matter, HTML blocks, indented lines outside a list, a `Key: value` field, a setext `===` underline, a line ending in two spaces, a leading `To:` / `Subject:` header block, and an unindented line under a list item, which is how a quoted message with its own line breaks arrives.
+A hard-wrapped list item is joined into one line too, because its wrapped remainder is prose. Everything else where the line break is the meaning is left alone: fenced code, tables, nested list items, headings, rules, blockquotes, YAML front matter, HTML blocks, indented lines outside a list, a `Key: value` field, a setext `===` underline, a line ending in two spaces or a backslash, whatever follows a line ending in a colon inside a list item, a leading `To:` / `Subject:` header block, and an unindented line under a list item, which is how a quoted message with its own line breaks arrives.
 
 ## Using it
 

@@ -39,7 +39,10 @@ because "file in" and "filein" are not the same string.
       list item (lazy continuation)
     headings, --- rules, blank     blockquotes (>)
     YAML front matter              HTML blocks (< at column 0)
-    a line ending in two spaces    ← markdown's own hard-break syntax
+    a line ending in two spaces    ← markdown's own hard-break syntax, as is
+      or in a backslash                a trailing backslash
+    a line ending in a colon       what follows it inside a list item is a block,
+                                     not a wrapped sentence
     a leading header block         To: / Subject: / Date: lines before the first blank line
     a `Key: value` field           anywhere a wrapped line would otherwise start
     a === setext underline         joining it would turn the heading into prose
@@ -82,9 +85,21 @@ def special(line: str) -> bool:
         return True
     if "|" in line:                       # a table row, or something table-like
         return True
-    if line.endswith("  "):               # markdown's explicit hard line break
+    if hard_break(line):
         return True
     return False
+
+
+def hard_break(line: str) -> bool:
+    """Markdown's two explicit hard line breaks: two trailing spaces, or a backslash."""
+    return line.endswith("  ") or line.endswith("\\")
+
+
+def ends_block(line: str) -> bool:
+    """True if nothing may be joined onto this line: a hard break, or a line ending in
+    a colon, after which an indented list of names ("Attachments:") is a block the
+    writer laid out, not the rest of a sentence (the 2026-10-18 failure, in a list)."""
+    return hard_break(line) or line.rstrip().endswith(":")
 
 
 def list_continuation(line: str, content_col: int) -> bool:
@@ -99,21 +114,21 @@ def list_continuation(line: str, content_col: int) -> bool:
 
     What is NOT a continuation is anything whose break carries meaning: a nested item,
     a fence, a table, a heading, a rule, a quote, an HTML element on its own line, a
-    `Key: value` field, an explicit two-space break, or an indent deep enough to be a
-    code block inside the item.
+    `Key: value` field, or an indent deep enough to be a code block inside the item.
+    The structural tests run on the line with its indent removed: inside an item a
+    heading, a rule or a setext underline sits at the item's column, not at column 0.
+    A line that ends in a hard break IS a continuation; the caller joins it and then
+    stops joining.
     """
     if not line.strip():
         return False
-    if (LIST.match(line) or FENCE.match(line) or HEADING.match(line) or RULE.match(line)
-            or QUOTE.match(line) or HTML.match(line) or SETEXT.match(line)):
-        return False
-    if line.strip().startswith("<"):            # an HTML element on a line of its own
+    rel = line.lstrip()
+    if (LIST.match(rel) or FENCE.match(rel) or HEADING.match(rel) or RULE.match(rel)
+            or QUOTE.match(rel) or HTML.match(rel) or SETEXT.match(rel)):
         return False
     if "|" in line:
         return False
-    if line.endswith("  "):
-        return False
-    if HEADER.match(line.strip()):              # a field, not a sentence
+    if HEADER.match(rel):                       # a field, not a sentence
         return False
     indent = len(line) - len(line.lstrip())
     if indent == 0:                             # a lazy continuation, or anything at all
@@ -158,7 +173,10 @@ def reflow(text: str) -> str:
             if len(item) == 1:
                 out.append(item[0])
             else:
-                out.append(item[0].rstrip() + " " + " ".join(x.strip() for x in item[1:]))
+                joined = item[0].rstrip() + " " + " ".join(x.strip() for x in item[1:])
+                if item[-1].endswith("  "):     # keep a two-space hard break
+                    joined += "  "
+                out.append(joined)
             item.clear()
 
     # YAML front matter is passed through verbatim
@@ -179,7 +197,8 @@ def reflow(text: str) -> str:
 
     while i < len(lines):
         ln = lines[i]
-        m = None if in_fence else LIST.match(ln)
+        # A spaced rule like `- - -` also matches LIST; the rule wins.
+        m = None if in_fence or RULE.match(ln) else LIST.match(ln)
         if FENCE.match(ln):
             flush(); flush_item()
             in_fence = not in_fence
@@ -196,16 +215,16 @@ def reflow(text: str) -> str:
             item.append(ln)
             item_col = len(m.group(0))
             in_list, passthrough = True, False
-            # An item line ending in two spaces is markdown's hard break: nothing may be
-            # joined after it, and the rest of the block is left as it was typed.
-            if ln.endswith("  "):
+            # An item line ending in a hard break or a colon: nothing may be joined
+            # after it, and the rest of the block is left as it was typed.
+            if ends_block(ln):
                 flush_item()
                 passthrough = True
         elif in_list and not passthrough and list_continuation(ln, item_col):
-            if item:
-                item.append(ln)
-            else:
-                out.append(ln)
+            item.append(ln)
+            if ends_block(ln):                  # joined up to here, then left alone
+                flush_item()
+                passthrough = True
         elif in_list:
             flush_item()
             passthrough = True

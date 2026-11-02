@@ -65,7 +65,7 @@ RULE = re.compile(r"^\s{0,3}([-*_])\s*(\1\s*){2,}$")
 LIST = re.compile(r"^\s*([-*+]|\d{1,9}[.)])\s+")
 QUOTE = re.compile(r"^\s*>")
 HTML = re.compile(r"^<")
-SETEXT = re.compile(r"^\s{0,3}=+\s*$")   # the === under a setext heading
+SETEXT = re.compile(r"^\s{0,3}(=+|-+)\s*$")   # the === or -- under a setext heading
 INDENT = re.compile(r"^\s")                # any leading whitespace
 HEADER = re.compile(r"^[A-Za-z][A-Za-z-]{0,30}:(\s|$)")   # To: / Subject: / Date:
 
@@ -197,8 +197,15 @@ def reflow(text: str) -> str:
 
     while i < len(lines):
         ln = lines[i]
-        # A spaced rule like `- - -` also matches LIST; the rule wins.
-        m = None if in_fence or RULE.match(ln) else LIST.match(ln)
+        # A line starts a list item only where markdown would read one: never inside a
+        # fence or a block being passed through, and never indented far enough to be
+        # code (four columns past the enclosing item's text, or past the margin). A
+        # spaced rule like `- - -` also matches LIST; the rule wins.
+        indent = len(ln) - len(ln.lstrip())
+        m = None
+        if not (in_fence or passthrough or RULE.match(ln)):
+            if indent < (item_col + 4 if in_list else 4):
+                m = LIST.match(ln)
         if FENCE.match(ln):
             flush(); flush_item()
             in_fence = not in_fence
@@ -212,14 +219,25 @@ def reflow(text: str) -> str:
             out.append(ln)
         elif m:
             flush(); flush_item()
-            item.append(ln)
             item_col = len(m.group(0))
+            text = ln[item_col:]
             in_list, passthrough = True, False
-            # An item line ending in a hard break or a colon: nothing may be joined
-            # after it, and the rest of the block is left as it was typed.
-            if ends_block(ln):
-                flush_item()
+            if FENCE.match(text) or HEADING.match(text) or HTML.match(text) or QUOTE.match(text):
+                # The item's own text opens a block (`- ```bash`, `- # Title`): the lines
+                # under it belong to that block, not to a sentence. A fence opened here
+                # is closed by its own indented fence line, which the FENCE branch above
+                # sees, so the fence state must be set to match.
+                out.append(ln)
                 passthrough = True
+                if FENCE.match(text):
+                    in_fence = True
+            else:
+                item.append(ln)
+                # An item line ending in a hard break or a colon: nothing may be joined
+                # after it, and the rest of the block is left as it was typed.
+                if ends_block(ln):
+                    flush_item()
+                    passthrough = True
         elif in_list and not passthrough and list_continuation(ln, item_col):
             item.append(ln)
             if ends_block(ln):                  # joined up to here, then left alone
